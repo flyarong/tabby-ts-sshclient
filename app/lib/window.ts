@@ -1,65 +1,79 @@
 import * as glasstron from 'glasstron'
-if (process.platform === 'win32' || process.platform === 'linux') {
-    glasstron.init()
-}
 
-import { Subject, Observable } from 'rxjs'
-import { debounceTime } from 'rxjs/operators'
-import { BrowserWindow, app, ipcMain, Rectangle, Menu, screen } from 'electron'
+import { Subject, Observable, debounceTime } from 'rxjs'
+import { BrowserWindow, app, ipcMain, Rectangle, Menu, screen, BrowserWindowConstructorOptions, TouchBar, nativeImage, WebContents } from 'electron'
 import ElectronConfig = require('electron-config')
+import { enable as enableRemote } from '@electron/remote/main'
 import * as os from 'os'
 import * as path from 'path'
+import macOSRelease from 'macos-release'
+import { compare as compareVersions } from 'compare-versions'
 
+import type { Application } from './app'
 import { parseArgs } from './cli'
-import { loadConfig } from './config'
 
-let DwmEnableBlurBehindWindow: any
+let DwmEnableBlurBehindWindow: any = null
 if (process.platform === 'win32') {
-    DwmEnableBlurBehindWindow = require('windows-blurbehind').DwmEnableBlurBehindWindow
+    DwmEnableBlurBehindWindow = require('@tabby-gang/windows-blurbehind').DwmEnableBlurBehindWindow
 }
 
 export interface WindowOptions {
     hidden?: boolean
 }
 
+abstract class GlasstronWindow extends BrowserWindow {
+    blurType: string
+    abstract setBlur (_: boolean)
+}
+
+const macOSVibrancyType = process.platform === 'darwin' ? compareVersions(macOSRelease().version || '0.0', '10.14', '>=') ? 'under-window' : 'dark' : null
+
+const activityIcon = nativeImage.createFromPath(`${app.getAppPath()}/assets/activity.png`)
+
 export class Window {
     ready: Promise<void>
+    isMainWindow = false
+    webContents: WebContents
     private visible = new Subject<boolean>()
     private closed = new Subject<void>()
-    private window: BrowserWindow
+    private window?: GlasstronWindow
     private windowConfig: ElectronConfig
-    private windowBounds: Rectangle
+    private windowBounds?: Rectangle
     private closing = false
-    private lastVibrancy: {enabled: boolean, type?: string} | null = null
+    private lastVibrancy: { enabled: boolean, type?: string } | null = null
     private disableVibrancyWhileDragging = false
-    private configStore: any
+    private touchBarControl: any
+    private isFluentVibrancy = false
+    private dockHidden = false
 
     get visible$ (): Observable<boolean> { return this.visible }
     get closed$ (): Observable<void> { return this.closed }
 
-    constructor (options?: WindowOptions) {
-        this.configStore = loadConfig()
-
-        options = options || {}
+    // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+    constructor (private application: Application, private configStore: any, options?: WindowOptions) {
+        options = options ?? {}
 
         this.windowConfig = new ElectronConfig({ name: 'window' })
         this.windowBounds = this.windowConfig.get('windowBoundaries')
 
-        let maximized = this.windowConfig.get('maximized')
-        let bwOptions: Electron.BrowserWindowConstructorOptions = {
+        const maximized = this.windowConfig.get('maximized')
+        const bwOptions: BrowserWindowConstructorOptions = {
             width: 800,
             height: 600,
-            title: 'Terminus',
+            title: 'Tabby',
             minWidth: 400,
             minHeight: 300,
             webPreferences: {
                 nodeIntegration: true,
                 preload: path.join(__dirname, 'sentry.js'),
                 backgroundThrottling: false,
+                contextIsolation: false,
             },
+            maximizable: true,
             frame: false,
             show: false,
             backgroundColor: '#00000000',
+            acceptFirstMouse: true,
         }
 
         if (this.windowBounds) {
@@ -75,20 +89,29 @@ export class Window {
             }
         }
 
-        if ((this.configStore.appearance || {}).frame === 'native') {
+        if (this.configStore.appearance?.frame === 'native') {
             bwOptions.frame = true
         } else {
-            if (process.platform === 'darwin') {
-                bwOptions.titleBarStyle = 'hiddenInset'
+            bwOptions.titleBarStyle = 'hidden'
+            if (process.platform === 'win32') {
+                bwOptions.titleBarOverlay = {
+                    color: '#00000000',
+                }
             }
         }
 
-        this.window = new BrowserWindow(bwOptions)
+        if (process.platform === 'darwin') {
+            this.window = new BrowserWindow(bwOptions) as GlasstronWindow
+        } else {
+            this.window = new glasstron.BrowserWindow(bwOptions)
+        }
+
+        this.webContents = this.window.webContents
 
         this.window.once('ready-to-show', () => {
             if (process.platform === 'darwin') {
-                this.window.setVibrancy('window')
-            } else if (process.platform === 'win32' && (this.configStore.appearance || {}).vibrancy) {
+                this.window.setVibrancy(macOSVibrancyType)
+            } else if (process.platform === 'win32' && this.configStore.appearance?.vibrancy) {
                 this.setVibrancy(true)
             }
 
@@ -100,18 +123,38 @@ export class Window {
                 }
                 this.window.focus()
                 this.window.moveTop()
+                application.focus()
             }
         })
 
         this.window.on('blur', () => {
-            if (this.configStore.appearance?.dockHideOnBlur) {
+            if (
+                (this.configStore.appearance?.dock ?? 'off') !== 'off' &&
+                this.configStore.appearance?.dockHideOnBlur &&
+                !BrowserWindow.getFocusedWindow()
+            ) {
                 this.hide()
             }
         })
 
-        this.window.loadURL(`file://${app.getAppPath()}/dist/index.html?${this.window.id}`, { extraHeaders: 'pragma: no-cache\n' })
+        enableRemote(this.window.webContents)
 
-        if (process.platform !== 'darwin') {
+        this.window.loadURL(`file://${app.getAppPath()}/dist/index.html`, { extraHeaders: 'pragma: no-cache\n' })
+
+        this.window.webContents.setVisualZoomLevelLimits(1, 1)
+        this.window.webContents.setZoomFactor(1)
+        this.window.webContents.session.setPermissionCheckHandler(() => true)
+        this.window.webContents.session.setDevicePermissionHandler(() => true)
+
+        if (process.platform === 'darwin') {
+            this.touchBarControl = new TouchBar.TouchBarSegmentedControl({
+                segments: [],
+                change: index => this.send('touchbar-selection', index),
+            })
+            this.window.setTouchBar(new TouchBar({
+                items: [this.touchBarControl],
+            }))
+        } else {
             this.window.setMenu(null)
         }
 
@@ -128,42 +171,47 @@ export class Window {
         })
     }
 
-    setVibrancy (enabled: boolean, type?: string): void {
-        this.lastVibrancy = { enabled, type }
-        if (process.platform === 'win32') {
-            if (parseFloat(os.release()) >= 10) {
-                glasstron.update(this.window, {
-                    windows: { blurType: enabled ? type === 'fluent' ? 'acrylic' : 'blurbehind' : null },
-                })
-            } else {
-                DwmEnableBlurBehindWindow(this.window, enabled)
-            }
-        } else if (process.platform ==='linux') {
-            glasstron.update(this.window, {
-                linux: { requestBlur: enabled },
-            })
-            this.window.setBackgroundColor(enabled ? '#00000000' : '#131d27')
-        } else {
-            this.window.setVibrancy(enabled ? 'dark' : null as any) // electron issue 20269
-        }
+    makeMain (): void {
+        this.isMainWindow = true
+        this.window.webContents.send('host:became-main-window')
     }
 
-    show (): void {
-        this.window.show()
-        this.window.moveTop()
+    setVibrancy (enabled: boolean, type?: string, userRequested?: boolean): void {
+        if (userRequested ?? true) {
+            this.lastVibrancy = { enabled, type }
+        }
+        if (process.platform === 'win32') {
+            if (parseFloat(os.release()) >= 10) {
+                this.window.blurType = enabled ? type === 'fluent' ? 'acrylic' : 'blurbehind' : null
+                try {
+                    this.window.setBlur(enabled)
+                    this.isFluentVibrancy = enabled && type === 'fluent'
+                } catch (error) {
+                    console.error('Failed to set window blur', error)
+                }
+            } else {
+                DwmEnableBlurBehindWindow(this.window.getNativeWindowHandle(), enabled)
+            }
+        } else if (process.platform === 'linux') {
+            this.window.setBackgroundColor(enabled ? '#00000000' : '#131d27')
+            this.window.setBlur(enabled)
+        } else {
+            this.window.setVibrancy(enabled ? macOSVibrancyType : null)
+        }
     }
 
     focus (): void {
         this.window.focus()
     }
 
-    send (event: string, ...args): void {
+    send (event: string, ...args: any[]): void {
         if (!this.window) {
             return
         }
         this.window.webContents.send(event, ...args)
         if (event === 'host:config-change') {
             this.configStore = args[0]
+            this.enableDockedWindowStyles(this.isDockedOnTop())
         }
     }
 
@@ -175,44 +223,70 @@ export class Window {
         return this.window.isFocused()
     }
 
-    hide (): void {
+    isVisible (): boolean {
+        return this.window.isVisible()
+    }
+
+    isDockedOnTop (): boolean {
+        return this.isMainWindow && this.configStore.appearance?.dock && this.configStore.appearance?.dock !== 'off' && (this.configStore.appearance?.dockAlwaysOnTop ?? true)
+    }
+
+    async hide (): Promise<void> {
         if (process.platform === 'darwin') {
             // Lose focus
             Menu.sendActionToFirstResponder('hide:')
-        }
-        this.window.blur()
-        if (process.platform !== 'darwin') {
-            this.window.hide()
-        }
-    }
-
-    present (): void {
-        if (!this.window.isVisible()) {
-            // unfocused, invisible
-            this.window.show()
-            this.window.focus()
-        } else {
-            if (!this.configStore.appearance?.dock || this.configStore.appearance?.dock === 'off') {
-                // not docked, visible
-                setTimeout(() => {
-                    this.window.show()
-                    this.window.focus()
-                })
-            } else {
-                if (this.configStore.appearance?.dockAlwaysOnTop) {
-                    // docked, visible, on top
-                    this.window.hide()
-                } else {
-                    // docked, visible, not on top
-                    this.window.focus()
-                }
+            if (this.isDockedOnTop()) {
+                await this.enableDockedWindowStyles(false)
             }
         }
+        this.window.blur()
+        this.window.hide()
     }
 
-    handleSecondInstance (argv: string[], cwd: string): void {
-        if (!this.configStore.appearance?.dock) {
-            this.send('host:second-instance', parseArgs(argv, cwd), cwd)
+    async show (): Promise<void> {
+        await this.enableDockedWindowStyles(this.isDockedOnTop())
+        this.window.show()
+        this.window.focus()
+    }
+
+    async present (): Promise<void> {
+        await this.show()
+        this.window.moveTop()
+    }
+
+    passCliArguments (argv: string[], cwd: string, secondInstance: boolean): void {
+        this.send('cli', parseArgs(argv, cwd), cwd, secondInstance)
+    }
+
+    private async enableDockedWindowStyles (enabled: boolean) {
+        if (process.platform === 'darwin') {
+            if (enabled) {
+                if (!this.dockHidden) {
+                    app.dock.hide()
+                    this.dockHidden = true
+                }
+                this.window.setAlwaysOnTop(true, 'screen-saver', 1)
+                if (!this.window.isVisibleOnAllWorkspaces()) {
+                    this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+                }
+                if (this.window.fullScreenable) {
+                    this.window.setFullScreenable(false)
+                }
+            } else {
+                if (this.dockHidden) {
+                    await app.dock.show()
+                    this.dockHidden = false
+                }
+                if (this.window.isAlwaysOnTop()) {
+                    this.window.setAlwaysOnTop(false)
+                }
+                if (this.window.isVisibleOnAllWorkspaces()) {
+                    this.window.setVisibleOnAllWorkspaces(false)
+                }
+                if (!this.window.fullScreenable) {
+                    this.window.setFullScreenable(true)
+                }
+            }
         }
     }
 
@@ -226,7 +300,7 @@ export class Window {
             this.visible.next(false)
         })
 
-        let moveSubscription = new Observable<void>(observer => {
+        const moveSubscription = new Observable<void>(observer => {
             this.window.on('move', () => observer.next())
         }).pipe(debounceTime(250)).subscribe(() => {
             this.send('host:window-moved')
@@ -238,6 +312,9 @@ export class Window {
 
         this.window.on('enter-full-screen', () => this.send('host:window-enter-full-screen'))
         this.window.on('leave-full-screen', () => this.send('host:window-leave-full-screen'))
+
+        this.window.on('maximize', () => this.send('host:window-maximized'))
+        this.window.on('unmaximize', () => this.send('host:window-unmaximized'))
 
         this.window.on('close', event => {
             if (!this.closing) {
@@ -269,36 +346,17 @@ export class Window {
             this.send('host:window-focused')
         })
 
-        ipcMain.on('window-focus', event => {
+        ipcMain.on('ready', event => {
             if (!this.window || event.sender !== this.window.webContents) {
                 return
             }
-            this.window.focus()
-        })
-
-        ipcMain.on('window-maximize', event => {
-            if (!this.window || event.sender !== this.window.webContents) {
-                return
-            }
-            this.window.maximize()
-        })
-
-        ipcMain.on('window-unmaximize', event => {
-            if (!this.window || event.sender !== this.window.webContents) {
-                return
-            }
-            this.window.unmaximize()
-        })
-
-        ipcMain.on('window-toggle-maximize', event => {
-            if (!this.window || event.sender !== this.window.webContents) {
-                return
-            }
-            if (this.window.isMaximized()) {
-                this.window.unmaximize()
-            } else {
-                this.window.maximize()
-            }
+            this.window.webContents.send('start', {
+                config: this.configStore,
+                executable: app.getPath('exe'),
+                windowID: this.window.id,
+                isMainWindow: this.isMainWindow,
+                userPluginsPath: this.application.userPluginsPath,
+            })
         })
 
         ipcMain.on('window-minimize', event => {
@@ -329,6 +387,22 @@ export class Window {
             this.setVibrancy(enabled, type)
         })
 
+        ipcMain.on('window-set-window-controls-color', (event, theme) => {
+            if (!this.window || event.sender !== this.window.webContents) {
+                return
+            }
+
+            if (process.platform === 'win32') {
+                const symbolColor: string = theme.foreground
+                this.window.setTitleBarOverlay(
+                    {
+                        symbolColor: symbolColor,
+                        height: 32,
+                    },
+                )
+            }
+        })
+
         ipcMain.on('window-set-title', (event, title) => {
             if (!this.window || event.sender !== this.window.webContents) {
                 return
@@ -343,8 +417,7 @@ export class Window {
             if (this.window.isMinimized()) {
                 this.window.restore()
             }
-            this.window.show()
-            this.window.moveTop()
+            this.present()
         })
 
         ipcMain.on('window-close', event => {
@@ -355,29 +428,48 @@ export class Window {
             this.window.close()
         })
 
-        this.window.webContents.on('new-window', event => event.preventDefault())
-
-        ipcMain.on('window-set-disable-vibrancy-while-dragging', (_event, value) => {
-            this.disableVibrancyWhileDragging = value
+        ipcMain.on('window-set-touch-bar', (_event, segments, selectedIndex) => {
+            this.touchBarControl.segments = segments.map(s => ({
+                label: s.label,
+                icon: s.hasActivity ? activityIcon : undefined,
+            }))
+            this.touchBarControl.selectedIndex = selectedIndex
         })
 
-        this.window.on('will-move', () => {
-            if (!this.lastVibrancy?.enabled || !this.disableVibrancyWhileDragging) {
+        this.window.webContents.setWindowOpenHandler(() => {
+            return { action: 'deny' }
+        })
+
+        ipcMain.on('window-set-disable-vibrancy-while-dragging', (_event, value) => {
+            this.disableVibrancyWhileDragging = value && this.configStore.hacks?.disableVibrancyWhileDragging
+        })
+
+        let moveEndedTimeout: any = null
+        const onBoundsChange = () => {
+            if (!this.lastVibrancy?.enabled || !this.disableVibrancyWhileDragging || !this.isFluentVibrancy) {
                 return
             }
-            let timeout: number|null = null
-            const oldVibrancy = this.lastVibrancy
-            this.setVibrancy(false)
-            const onMove = () => {
-                if (timeout) {
-                    clearTimeout(timeout)
-                }
-                timeout = setTimeout(() => {
-                    this.window.off('move', onMove)
-                    this.setVibrancy(oldVibrancy.enabled, oldVibrancy.type)
-                }, 500)
+            this.setVibrancy(false, undefined, false)
+            if (moveEndedTimeout) {
+                clearTimeout(moveEndedTimeout)
             }
-            this.window.on('move', onMove)
+            moveEndedTimeout = setTimeout(() => {
+                this.setVibrancy(this.lastVibrancy.enabled, this.lastVibrancy.type)
+            }, 50)
+        }
+        this.window.on('move', onBoundsChange)
+        this.window.on('resize', onBoundsChange)
+
+        ipcMain.on('window-set-traffic-light-position', (_event, x, y) => {
+            this.window.setWindowButtonPosition({ x, y })
+        })
+
+        ipcMain.on('window-set-opacity', (_event, opacity) => {
+            this.window.setOpacity(opacity)
+        })
+
+        ipcMain.on('window-set-progress-bar', (_event, value) => {
+            this.window.setProgressBar(value, { mode: value < 0 ? 'none' : 'normal' })
         })
     }
 

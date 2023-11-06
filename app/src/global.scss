@@ -1,7 +1,12 @@
+html {
+    --spaciness: 1;
+}
+
 body {
     min-height: 100vh;
     overflow: hidden;
-    background: #1D272D;
+    background: transparent !important;
+    -webkit-font-smoothing: antialiased;
 }
 
 .modal-dialog, .modal-backdrop, .no-drag {
@@ -12,19 +17,22 @@ body {
     user-select: text;
 }
 
-[ngbradiogroup] input[type="radio"] {
-    display: none;
-}
+a, button {
+    &.btn {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: nowrap;
 
-.btn {
-    & > svg {
-        pointer-events: none;
+        & > svg {
+            pointer-events: none;
+            // width: 16px;
+            // height: 16px;
+        }
     }
 }
 
 .form-line {
     display: flex;
-    border-top: 1px solid rgba(0, 0, 0, 0.2);
     align-items: center;
     padding: 10px 0;
     margin: 0;
@@ -44,6 +52,10 @@ body {
 
     &>.form-control, &>.input-group {
         width: 33%;
+    }
+
+    &>.form-check {
+        display: flex;
     }
 }
 
@@ -94,4 +106,96 @@ input[type=range] {
     &:focus::-webkit-slider-runnable-track { @include track(); }
     &::-moz-range-track { @include track(); }
     &::-ms-track { @include track(); }
+}
+
+a[ngbdropdownitem] {
+    cursor: pointer;
+}
+
+ngb-typeahead-window {
+    max-height: 60vh;
+    overflow: auto;
+}
+
+
+.hover-reveal {
+    opacity: 0;
+
+    .hover-reveal-parent:hover &,
+    *:hover > &,
+    &:hover,
+    &.show {
+      opacity: 1;
+    }
+}
+
+
+@keyframes terminalShakeFrames {
+    0% {
+        transform: translateX(0);
+    }
+    25% {
+        transform: translateX(5px);
+    }
+    50% {
+        transform: translateX(-5px);
+    }
+    75% {
+        transform: translateX(5px);
+    }
+    100% {
+        transform: translateX(0);
+    }
+}
+
+.dropdown {
+    .dropdown-toggle::after {
+        vertical-align: 0.15em;
+        margin-left: .5em;
+        opacity: .5;
+    }
+
+    .dropdown-item {
+        i + span {
+            margin-left: 10px;
+        }
+    }
+}
+
+.no-wrap {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.list-group-item > button {
+    margin: -7px 0;
+}
+
+.content-box {
+    max-width: 600px;
+}
+
+
+// Windows high contrast mode
+@media screen and (forced-colors: active) {
+    .form-switch .form-check-label::before {
+        background: buttonface;
+    }
+
+    .form-switch .form-check-label::after {
+        background: buttontext;
+    }
+
+    .form-switch .form-check-input:checked ~ .form-check-label::before {
+        background: activetext;
+    }
+
+    .form-switch .form-check-input:checked ~ .form-check-label::after {
+        background: canvas;
+    }
+
+    color-scheme-preview, terminaltab > .content {
+        forced-color-adjust: none;
+    }
 }

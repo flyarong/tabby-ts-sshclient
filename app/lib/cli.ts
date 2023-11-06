@@ -5,12 +5,12 @@ export function parseArgs (argv: string[], cwd: string): any {
         argv = argv.slice(1)
     }
 
-    return require('yargs')
-        .usage('terminus [command] [arguments]')
+    return require('yargs/yargs')(argv.slice(1))
+        .usage('tabby [command] [arguments]')
         .command('open [directory]', 'open a shell in a directory', {
             directory: { type: 'string', 'default': cwd },
         })
-        .command('run [command...]', 'run a command in the terminal', {
+        .command(['run [command...]', '/k'], 'run a command in the terminal', {
             command: { type: 'string' },
         })
         .command('profile [profileName]', 'open a tab with specified profile', {
@@ -25,7 +25,10 @@ export function parseArgs (argv: string[], cwd: string): any {
                 type: 'string',
             })
         })
-        .version('version', '', app.getVersion())
+        .command('recent [index]', 'open a tab with a recent profile', {
+            profileNumber: { type: 'number' },
+        })
+        .version(app.getVersion())
         .option('debug', {
             alias: 'd',
             describe: 'Show DevTools on start',
@@ -35,11 +38,6 @@ export function parseArgs (argv: string[], cwd: string): any {
             describe: 'Start minimized',
             type: 'boolean',
         })
-        .option('version', {
-            alias: 'v',
-            describe: 'Show version and exit',
-            type: 'boolean',
-        })
         .help('help')
-        .parse(argv.slice(1))
+        .parse()
 }

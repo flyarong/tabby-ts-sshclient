@@ -1,7 +1,8 @@
 {
-  "name": "terminus",
+  "name": "tabby",
   "description": "A terminal for a modern age",
-  "repository": "https://github.com/eugeny/terminus",
+  "private": true,
+  "repository": "https://github.com/Eugeny/tabby",
   "author": {
     "name": "Eugene Pankov",
     "email": "e@ajenti.org"
@@ -9,46 +10,60 @@
   "main": "dist/main.js",
   "version": "1.0.0-alpha.1",
   "scripts": {
+    "postinstall": "patch-package",
     "build": "webpack --progress --color --display-modules",
     "watch": "webpack --progress --color --watch"
   },
   "dependencies": {
-    "@angular/animations": "9.1.9",
-    "@angular/common": "9.1.11",
-    "@angular/compiler": "9.1.9",
-    "@angular/core": "9.1.9",
-    "@angular/forms": "9.1.11",
-    "@angular/platform-browser": "9.1.9",
-    "@angular/platform-browser-dynamic": "9.1.9",
-    "@ng-bootstrap/ng-bootstrap": "^6.1.0",
-    "devtron": "1.4.0",
+    "@electron/remote": "2.0.10",
+    "node-pty": "^1.0",
+    "any-promise": "^1.3.0",
     "electron-config": "2.0.0",
-    "electron-debug": "^3.0.1",
-    "electron-is-dev": "1.1.0",
-    "fontmanager-redux": "0.4.0",
-    "glasstron": "sentialx/Glasstron#n-api",
-    "js-yaml": "3.14.0",
-    "keytar": "^6.0.1",
+    "electron-debug": "^3.2.0",
+    "electron-promise-ipc": "^2.2.4",
+    "electron-updater": "^5.2.1",
+    "fontmanager-redux": "1.1.0",
+    "glasstron": "0.1.1",
+    "js-yaml": "4.1.0",
+    "keytar": "^7.9.0",
     "mz": "^2.7.0",
-    "ngx-toastr": "^12.0.1",
-    "@terminus-term/node-pty": "0.10.0-beta9",
-    "npm": "6.9.0",
-    "path": "0.12.7",
-    "rxjs": "^6.5.5",
-    "rxjs-compat": "^6.6.0",
-    "yargs": "^15.4.1",
-    "zone.js": "^0.10.3"
+    "native-process-working-directory": "^1.0.2",
+    "npm": "6",
+    "rxjs": "^7.5.7",
+    "source-map-support": "^0.5.20",
+    "v8-compile-cache": "^2.3.0",
+    "yargs": "^17.7.2"
   },
   "optionalDependencies": {
-    "macos-native-processlist": "^2.0.0",
-    "serialport": "^9.0.0",
-    "windows-blurbehind": "^1.0.1",
-    "windows-native-registry": "^3.0.0",
-    "windows-process-tree": "^0.2.4"
+    "@tabby-gang/windows-blurbehind": "^3.0.0",
+    "macos-native-processlist": "^2.1.0",
+    "patch-package": "^6.5.0",
+    "serialport": "11.0.1",
+    "serialport-binding-webserialapi": "^1.0.3",
+    "windows-native-registry": "^3.2.1",
+    "windows-process-tree": "^0.4.0"
   },
   "devDependencies": {
-    "@types/mz": "0.0.32",
-    "@types/node": "12.7.12",
-    "node-abi": "^2.18.0"
+    "@ngx-translate/core": "^14.0.0",
+    "@types/mz": "2.7.4",
+    "@types/node": "20.3.1",
+    "atomically": "^2.0.2",
+    "filesize": "^9",
+    "ngx-filesize": "^3.0.2"
+  },
+  "peerDependencies": {
+    "tabby-community-color-schemes": "*",
+    "tabby-core": "*",
+    "tabby-electron": "*",
+    "tabby-local": "*",
+    "tabby-plugin-manager": "*",
+    "tabby-serial": "*",
+    "tabby-settings": "*",
+    "tabby-ssh": "*",
+    "tabby-terminal": "*"
+  },
+  "resolutions": {
+    "*/node-abi": "^2.20.0",
+    "nan": "github:jkleinsc/nan#remove_accessor_signature"
   }
 }

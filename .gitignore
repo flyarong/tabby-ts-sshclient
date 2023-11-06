@@ -13,6 +13,9 @@ dist
 *.xcuserstate
 *.wixpdb
 
+.DS_Store
+.DS_Store?
+
 coverage
 .nyc_output
 npm-debug.log
@@ -24,9 +27,13 @@ yarn-error.log
 docs/api
 .travis.ssh.key
 *.code-workspace
+.idea/
 
 .electron-symbols
 sentry.properties
 sentry-symbols.js
 
-terminus-ssh/util/pagent.exe
+tabby-ssh/util/pagent.exe
+*.psd
+
+crowdin.yml

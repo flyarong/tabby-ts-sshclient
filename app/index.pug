@@ -1,5 +1,5 @@
 doctype html
-html
+html.tabby
     head
         meta(charset='UTF-8')
         base(href='index.html')
@@ -12,11 +12,12 @@ html
             body { transition: 0.5s background; }
     body
         style#custom-css
+        root
         app-root
             .preload-logo
                 div
-                    .terminus-logo
-                    h1.terminus-title Terminus
+                    .tabby-logo
+                    h1.tabby-title Tabby
                         sup α
                     .progress
                         .bar(style='width: 0%')
